@@ -113,7 +113,7 @@ class Memory(nn.Module):
 
         # retrive memory values - prediction
 
-        topk_indices = topk_indices_var#.detach().data
+        topk_indices = topk_indices_var
         y_hat_indices = topk_indices[:, 0]
         y_hat = self.values[y_hat_indices]
 
@@ -156,20 +156,13 @@ class Memory(nn.Module):
         self.age += 1
 
         # Divide batch by correctness
-        result = torch.squeeze(torch.eq(y_hat, torch.unsqueeze(y.data, dim=1))).float()
-        incorrect_examples = torch.squeeze(torch.nonzero(1-result))
-        correct_examples = torch.squeeze(torch.nonzero(result))
-
-        incorrect = len(incorrect_examples.size()) > 0
-        correct = len(correct_examples.size()) > 0
-
-        # print("update correct {}, incorrect {}".format(correct_examples.size(),incorrect_examples.size()))
-        # print(correct_examples)
-        # print(incorrect_examples)
+        result = (y_hat == y).all(dim=1).long()
+        correct_examples = torch.nonzero(result).squeeze(-1)
+        incorrect_examples = torch.nonzero(1-result).squeeze(-1)
 
         # 2) Correct: if V[n1] = v
         # Update Key k[n1] <- normalize(q + K[n1]), Reset Age A[n1] <- 0
-        if correct:
+        if correct_examples.size()[0] > 0:
             correct_indices = y_hat_indices[correct_examples]
             correct_keys = self.keys[correct_indices]
             correct_query = query.data[correct_examples]
@@ -183,10 +176,10 @@ class Memory(nn.Module):
         # 3) Incorrect: if V[n1] != v
         # Select item with oldest age, Add random offset - n' = argmax_i(A[i]) + r_i
         # K[n'] <- q, V[n'] <- v, A[n'] <- 0
-        if incorrect:
+        if incorrect_examples.size()[0] > 0:
             incorrect_size = incorrect_examples.size()[0]
             incorrect_query = query.data[incorrect_examples]
-            incorrect_values = y.data[incorrect_examples].unsqueeze(-1)
+            incorrect_values = y.data[incorrect_examples]
 
             age_with_noise = self.age + random_uniform((self.memory_size, 1), -self.age_noise, self.age_noise, cuda=False)#True)
             topk_values, topk_indices = torch.topk(age_with_noise, incorrect_size, dim=0)
@@ -198,3 +191,14 @@ class Memory(nn.Module):
 
             self.updates+=incorrect_examples.size()[0]
         return correct_examples,incorrect_examples
+
+if __name__ == "__main__":
+    mem = Memory(128, 2, margin=.01)
+    k1 = F.normalize(torch.rand(1,2))
+    v1 = torch.tensor([[1]])
+    k2 = F.normalize(torch.rand(1,2))
+    v2 = torch.tensor([[2]])
+    for k,v in [(k1,v1),(k1,v1),(k2,v2),(k2,v2),(k1,v1)]:
+        y_hat, softmax_score, loss, update = mem.query(k,v)
+        print(k,v,y_hat)
+        mem.update(*update)
