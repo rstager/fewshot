@@ -67,27 +67,29 @@ def show_results(classes,loader,net):
     _, predicted = torch.max(outputs, 1)
     print('Predicted: ', ' '.join('%5s' % classes[predicted[j]]for j in range(len(predicted))))
 
-def train(classes,loader,net,mem,testloader):
+def train(classes,loader,net,mem,testloader,epochs=2):
 
     optimizer = optim.Adam(net.parameters(), lr=1e-4, eps=1e-4)
+    # erase memory before training episode
+    mem.build()
+    for epoch in range(epochs):
 
-    for epoch in range(10):  # loop over the dataset multiple times
 
         running_loss = 0.0
         correct = 0
         incorrect = 0
-        # erase memory before training episode
-        mem.build()
+
         for i, data in enumerate(loader, 0):
             # get the inputs; data is a list of [inputs, labels]
             inputs, labels = data
+            y = labels.unsqueeze(-1)
 
             # zero the parameter gradients
             optimizer.zero_grad()
 
             # forward + backward + optimize
             embed = net(inputs)
-            labels_hat, softmax_embed, loss, update_args = mem.query(embed, labels, False)
+            labels_hat, softmax_embed, loss, update_args = mem.query(embed, y, False)
             loss.backward()
             optimizer.step()
 
@@ -111,9 +113,9 @@ def train(classes,loader,net,mem,testloader):
 if __name__ == "__main__":
     classes,trainloader,testloader=loaders()
     net = Net()
-    memory_size = 8192
+    memory_size = 128
     key_dim = 84
-    mem = Memory(memory_size, key_dim,margin=.01)
+    mem = Memory(memory_size, key_dim,margin=.1,top_k=16)
     net.add_module("memory", mem)
     #net.cuda()
-    train(classes,trainloader,net,mem,testloader)
+    train(classes,trainloader,net,mem,testloader,epochs=64)

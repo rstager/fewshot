@@ -34,10 +34,10 @@ def MemoryLoss(positive, negative, margin):
         margin
     """
     assert(positive.size() == negative.size())
-    #dist_hinge = torch.clamp(negative - positive + margin, min=0.0)
-    dist_hinge = negative-positive+margin
+    dist_hinge = torch.clamp(negative - positive + margin, min=0.0)
+    #dist_hinge = negative-positive+margin
     loss = torch.mean(dist_hinge)
-    print("spread {:.3f} loss {:.3f}".format(torch.mean(positive-negative).item(),loss.item()))
+    #print("spread {:.3f} loss {:.3f}".format(torch.mean(positive-negative).item(),loss.item()))
     return loss
 
 """
@@ -65,7 +65,7 @@ class Memory(nn.Module):
     def build(self):
         self.keys = F.normalize(random_uniform((self.memory_size, self.key_dim), -0.001, 0.001, cuda=False), dim=1)
         self.keys_var = ag.Variable(self.keys, requires_grad=False)
-        self.values = torch.zeros(self.memory_size, 1).long()#.cuda()
+        self.values = (torch.zeros(self.memory_size, 1).long()-1)#.cuda()
         self.age = torch.zeros(self.memory_size, 1)#.cuda()
         self.inserts=0
         self.updates=0
@@ -124,17 +124,19 @@ class Memory(nn.Module):
             # topk_values =  (batch_size x topk x value_size)
 
             # collect the memory values corresponding to the topk scores
-            with torch.no_grad():
-              batch_size, topk_size = topk_indices.size()
-              flat_topk = flatten(topk_indices)
-              flat_topk_values = self.values[topk_indices]
-              topk_values = flat_topk_values.resize_(batch_size, topk_size)
-              correct_mask = torch.eq(topk_values, torch.unsqueeze(y.data, dim=1)).float()
-
+            topk_values = self.values[topk_indices]
+            correct_mask = torch.eq(topk_values, torch.unsqueeze(y, dim=1)).squeeze(-1).float()
             correct_mask_var = ag.Variable(correct_mask, requires_grad=False)
 
             pos_score, pos_idx = torch.topk(torch.mul(cosine_similarity, correct_mask_var), 1, dim=1)
             neg_score, neg_idx = torch.topk(torch.mul(cosine_similarity, 1-correct_mask_var), 1, dim=1)
+            if torch.lt(pos_idx,neg_idx).any() and predict:
+                for idx in range(batch_size):
+                    if pos_idx[idx]<neg_idx[idx]:
+                        print("{:10.3f} {:10.3f} {:3d} {:3d}  {:3d} {:3d}".format(pos_score[idx,0],neg_score[idx,0],
+                                int(pos_idx[idx,0]),int(neg_idx[idx,0]),
+                                int(y[idx, 0]), int(topk_values[idx,neg_idx[idx,0], 0]),
+                                                                     ))
 
             #print("match pos {:.3f}, nec {:.3f}".format(torch.mean(pos_score).item(),torch.mean(neg_score).item()))
             # zero-out correct scores if there are no correct values in topk values
@@ -193,7 +195,7 @@ class Memory(nn.Module):
         return correct_examples,incorrect_examples
 
 if __name__ == "__main__":
-    mem = Memory(128, 2, margin=.01)
+    mem = Memory(70000, 2, margin=.1)
     k1 = F.normalize(torch.rand(1,2))
     v1 = torch.tensor([[1]])
     k2 = F.normalize(torch.rand(1,2))
