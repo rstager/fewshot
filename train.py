@@ -1,3 +1,4 @@
+import pickle
 from copy import copy
 
 import torch.optim as optim
@@ -69,15 +70,18 @@ def show_results(classes,loader,net):
 
 def train(classes,loader,net,mem,testloader,epochs=2):
 
-    optimizer = optim.Adam(net.parameters(), lr=1e-4, eps=1e-4)
+    optimizer = optim.Adam(net.parameters(), lr=1e-3, eps=1e-4)
     # erase memory before training episode
     mem.build()
-    for epoch in range(epochs):
+    torch.save(net, "net_{}".format(0))
+    pickle.dump(mem, open("mem_{}".format(0), "wb"))
+    for eidx,epoch in enumerate(range(epochs)):
 
-
+        print("Epoch #{}".format(eidx))
         running_loss = 0.0
         correct = 0
         incorrect = 0
+        mem.best_count,mem.tot_count,mem.diff_sum= 0, 0, 0.0
 
         for i, data in enumerate(loader, 0):
             # get the inputs; data is a list of [inputs, labels]
@@ -105,10 +109,14 @@ def train(classes,loader,net,mem,testloader,epochs=2):
             running_loss += loss.item()
             cnt=200
             if i % cnt == (cnt-1):  # print every 2000 mini-batches
-                print('[%d, %5d] loss: %.6f hits %.3f accuracy %.1f inserts %6d updates %6d' %
+                print('[%d, %5d] loss: %.6f hits %.3f accuracy %.1f inserts %6d updates %6d  best %.3f diff %.3f' %
                       (epoch + 1, i + 1, running_loss / cnt, correct / (correct + incorrect),
-                       100 * test_accuracy(copy(testloader), net, mem),mem.inserts,mem.updates))
+                       100 * test_accuracy(copy(testloader), net, mem),mem.inserts,mem.updates,
+                       mem.best_count / mem.tot_count,mem.diff_sum/mem.tot_count,
+                       ),
+                      )
                 running_loss = 0.0
+        torch.save(net, "net_{}".format(eidx))
 
 if __name__ == "__main__":
     classes,trainloader,testloader=loaders()
@@ -118,4 +126,4 @@ if __name__ == "__main__":
     mem = Memory(memory_size, key_dim,margin=.1,top_k=16)
     net.add_module("memory", mem)
     #net.cuda()
-    train(classes,trainloader,net,mem,testloader,epochs=64)
+    train(classes,trainloader,net,mem,testloader,epochs=256)

@@ -4,6 +4,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.autograd as ag
+import numpy as np
 
 def random_uniform(shape, low, high, cuda):
     x = torch.rand(*shape)
@@ -57,6 +58,9 @@ class Memory(nn.Module):
         self.softmax_temperature = max(1.0, math.log(0.2 * top_k) / inverse_temp)
         self.age_noise = age_noise
         self.margin = margin
+        self.best_count=0
+        self.tot_count=0
+        self.diff_sum=0.0
 
         # Parameters
         self.build()
@@ -144,6 +148,10 @@ class Memory(nn.Module):
             pos_score = torch.mul(pos_score, torch.unsqueeze(mask, dim=1))
 
             #print(pos_score, neg_score)
+            best,_=torch.where(pos_score>neg_score)
+            self.best_count+=best.size()[0]
+            self.tot_count+=y_hat.size()[0]
+            self.diff_sum+=np.sum((pos_score-neg_score).detach().numpy())
             loss = MemoryLoss(pos_score, neg_score, self.margin)
 
         # Update memory
